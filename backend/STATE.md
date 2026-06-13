@@ -6,9 +6,10 @@ Single source of "where we are" and "what's next". Read this at session start.
 
 - **Session:** 2 (in progress).
 - **Runnable:** ✅ `cmd/api` binary builds and boots; fails fast with an aggregated config error when required env is unset.
-- **Loyalty redemption:** ✅ feature complete (commit pending push). Pure `domain.Redemption` rule (unit-tested, 9 cases); `store.Checkout` redeems inside the txn under a user-row `FOR UPDATE` lock; `TransitionOrder` refunds on cancel. Contract change published to the API brief. **DB-backed redemption tests (happy-path, over-balance 409, concurrent double-spend) deferred to Session 4** per the established no-test-DB-this-session pattern.
-- **Build:** `go build ./...` clean.
-- **Tests:** `go test ./...` green (domain, config, auth, paystack, sse). `httpapi` + `store` have no tests yet (DB-backed + HTTP-level deferred to Session 4 per plan §5).
+- **Loyalty redemption:** ✅ feature complete + DB-tested. Pure `domain.Redemption` rule (9 unit cases); `store.Checkout` redeems inside the txn under a user-row `FOR UPDATE` lock; `TransitionOrder` refunds on cancel. Contract published to the API brief.
+- **Build:** `go build ./...` clean; `go vet ./...` clean.
+- **Tests:** `go test ./...` green; **with `TEST_DATABASE_URL` set, `go test -p 1 ./...` green** (28 tests incl. DB-backed store + HTTP-level). Without the var the store/httpapi DB suites skip, so default `go test ./...` stays green on a box without Postgres.
+- **Test DB:** local Postgres 18 on socket; created `coffeemug_test` (owner `walker`) with `0001_init` applied. DSN used: `host=/var/run/postgresql user=walker dbname=coffeemug_test sslmode=disable` (peer auth — TCP needs a password, the socket does not).
 - **Phase 0 (scaffolding):** ✅ committed `e83a81c`.
 - **Phase 1 step 1 (schema migration):** ✅ committed `129defd`. Verified against Postgres (11 tables up, 0 down, re-up clean).
 - **Phase 1 step 2 (domain state machine):** ✅ committed `890e349`. Exhaustive table-driven tests green (`internal/domain`).
@@ -19,13 +20,18 @@ Single source of "where we are" and "what's next". Read this at session start.
 - **Phase 1 step 7 (sse):** ✅ `internal/sse` — in-process per-order pub/sub broker; non-blocking publish, idempotent leak-free unsubscribe. Passes `-race`.
 - **Phase 1 step 8 (httpapi):** ✅ committed `4f75b17`. `internal/httpapi` (10 files) — `server.go` route table + global chain (panic recovery → logging → CORS), `middleware.go` (Bearer/`?token=` auth, role gate, per-IP auth rate limit), handlers for auth/catalog/cart/checkout/orders/SSE/staff/admin, and `webhook_handlers.go` — the Paystack webhook, the **only** path to `paid`, enforcing TRD §5.2's four gates in order (signature → server-side verify → exact amount+GHS → legal transition), idempotent (paid→paid no-op), 5xx→retry / 200→stop, nil system actor. Standard error envelope throughout. The completing piece this session was the webhook handler (prior session stopped mid-step with it the one undefined symbol).
 - **Phase 1 step 9 (cmd/api):** ✅ committed `9b8e778`. `cmd/api/main.go` — composition + lifecycle only: `config.LoadFromEnv` → `store.Open` + startup ping (fail fast) → `auth.NewTokenManager`, `paystack.NewClient`, `sse.NewBroker` → `httpapi.NewServer` → serve `Handler()`. `http.Server` with slowloris read timeouts but **`WriteTimeout: 0`** (a positive write deadline would sever live SSE streams); SIGINT/SIGTERM → bounded graceful `Shutdown`. Binary boots + fails fast on missing env.
-- **Pushed to remotes:** Backend repo `origin/main` at `9b8e778` (paystack + sse were already on origin; this session pushed httpapi + cmd/api). Monorepo PR [#1](https://github.com/Manyle4/mug-e-store/pull/1) at `8792eb0` — **NOT yet updated with httpapi/cmd; needs a PR-mirror pass** (backend code under `backend/`, never touching `frontend/`).
+- **Phase 1 step 10 (tests):** ✅ committed `8124f79` (store) + `013e4bb` (httpapi). Store suite against real Postgres — checkout (happy/empty/unavailable/duplicate-key), redemption (exact balance / over-balance reject / **concurrent double-spend → exactly one commit, balance 0, passes `-race`**), transition (legal/illegal/no-op/earn/refund-on-cancel). HTTP suite via `httptest` + fake Paystack — auth flow, wrong-password 401, ownership 404, staff 403 on manual `paid`, and the webhook four-gate matrix (happy/bad-sig/verify-failed/amount-mismatch/idempotent). Both skip without `TEST_DATABASE_URL`.
+- **Pushed to remotes:** Backend repo `origin/main` at `9b8e778` (then `+` loyalty + tests this session, **push pending** — see below). Monorepo PR #1 mirrored to `3a9d3db` (`5df0579`) — **now behind again** by loyalty + tests; needs a re-mirror.
 
 ## Next action
 
-**Session 4 — the tests this sandbox has deferred (plan §5), against a real test database.** Stand up a Postgres test DB + a store test harness, then cover, in priority order: (1) `store.Checkout` — happy path, empty cart, unavailable item, duplicate idempotency key, **and the three redemption cases plan §3 calls for: redeem exactly the balance; over-balance → `ErrInsufficientPoints`; two concurrent redemptions of the same points → only one commits** (this is the double-spend test the `FOR UPDATE` user-row lock exists to pass); (2) `TransitionOrder` — legal/illegal/idempotent no-op, loyalty earn on completion, **and `refund_on_cancel` when a redeemed order is cancelled**; (3) HTTP-level tests with `httptest` — auth flow, ownership `404`, staff `403` on manual `paid`, and the webhook four-gate flow with a faked signature. After that: user-owned real-Paystack E2E (§4) + deploy (§6).
+**Backend code + tests for Phase 1 are complete.** What remains is owner-only (cannot be done from this sandbox):
+1. **Real-Paystack E2E (plan §4):** put a Paystack **test** secret key in `.env`, tunnel the local server (e.g. `ngrok http 8080`), register the webhook URL, run a real checkout with a test card, and confirm the order flips to `paid` over the live webhook + the SSE stream updates. Also verify a *pending* (not-success) payment does **not** flip the order.
+2. **Deploy (plan §6):** host backend + Postgres; set `FRONTEND_ORIGIN`; switch the refresh cookie to `SameSite=None; Secure` if cross-origin.
 
-**Outstanding delivery task (not code):** the monorepo PR (`Manyle4/mug-e-store` #1) still hasn't been updated since `8792eb0` — it lacks httpapi, cmd/api, the redemption work, and the API-brief contract change. Needs a PR-mirror pass (backend under `backend/`, never touching `frontend/`) per Git Law §3.4–3.5.
+If continuing in-sandbox instead: re-mirror the monorepo PR (now behind by loyalty + tests), or start Phase 2 features.
+
+**Monorepo PR — behind again.** `Manyle4/mug-e-store` PR #1 was last mirrored to `3a9d3db` (`5df0579`); it now lacks the loyalty + test commits (`74376c9`, `8124f79`, `013e4bb`, docs). Re-run the mirror pass (clone, `git archive HEAD | tar -x -C backend/`, verify 0 `frontend/` files, push `backend-bootstrap`).
 
 ## Notes / open items
 
