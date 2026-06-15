@@ -57,6 +57,8 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /api/v1/auth/login", s.rateLimit(http.HandlerFunc(s.handleLogin)))
 	mux.HandleFunc("POST /api/v1/auth/refresh", s.handleRefresh)
 	mux.HandleFunc("POST /api/v1/auth/logout", s.handleLogout)
+	mux.Handle("POST /api/v1/auth/password-reset/request", s.rateLimit(http.HandlerFunc(s.handlePasswordResetRequest)))
+	mux.Handle("POST /api/v1/auth/password-reset/confirm", s.rateLimit(http.HandlerFunc(s.handlePasswordResetConfirm)))
 
 	// Catalog (public reads).
 	mux.HandleFunc("GET /api/v1/categories", s.handleListCategories)
@@ -95,6 +97,9 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("DELETE /api/v1/admin/items/{id}", s.requireRole(http.HandlerFunc(s.handleDeleteItem), "admin"))
 	mux.Handle("POST /api/v1/admin/items/{id}/variants", s.requireRole(http.HandlerFunc(s.handleCreateVariant), "admin"))
 	mux.Handle("DELETE /api/v1/admin/variants/{id}", s.requireRole(http.HandlerFunc(s.handleDeleteVariant), "admin"))
+
+	// Admin-only: business reports (revenue is financial data → admin, not staff).
+	mux.Handle("GET /api/v1/admin/reports/summary", s.requireRole(http.HandlerFunc(s.handleReportSummary), "admin"))
 
 	return s.recoverPanic(s.logRequests(s.cors(mux)))
 }
