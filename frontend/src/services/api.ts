@@ -23,7 +23,7 @@ import { Category, MenuItem } from "@/types";
 // Set to true when no backend is available.
 // Set to false when your teammates' backend is ready.
 // This is the ONLY line you change to switch between mock and real.
-export const MOCK_MODE = true;
+export const MOCK_MODE = false;
 
 // ─── Token store ─────────────────────────────────────────────────────────────
 // The access token lives here — in a module-level variable, NOT localStorage.
