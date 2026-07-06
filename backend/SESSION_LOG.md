@@ -80,3 +80,10 @@ One short entry per session: what was built or changed.
 - **Shipped the deferred cross-origin cookie switch** (`7715331` `feat(auth)`): new optional `COOKIE_SECURE` env flips the refresh cookie to `SameSite=None; Secure` (browsers drop Lax cookies cross-site, so Vercel↔Render login would break without it). Config + both cookie helpers + white-box attribute tests + config tests; `render.yaml` sets it true, `.env.example` documents it. Build/vet green; full suite green (DB suites skipped — Postgres cluster down on this box, needs sudo to start).
 - **Mirrored to monorepo via fresh PR** (PR #2 merged, so a new PR was required per the standing rule).
 - **Hosting split confirmed:** Vercel = `frontend/` only (Root Directory = `frontend`, `NEXT_PUBLIC_API_URL` → Render URL); Go API + Postgres = Render Blueprint from the standalone repo. Owner clicks remain: Render Blueprint deploy (set `PAYSTACK_SECRET_KEY`, `FRONTEND_ORIGIN`), Vercel import, Paystack live-E2E.
+
+## Session 10 — 2026-07-06
+
+- **Housekeeping only.** Committed the leftover one-line `go.mod` tidy (`be5dd40` `chore(deps)`: lib/pq indirect → direct — internal/store imports it directly). Build/vet/test green (DB suites skip — no `TEST_DATABASE_URL`).
+- **Verified mirror state:** monorepo PRs #2/#3/#4 all merged; `backend/` was current with standalone `76518d3` before this session. Mirrored this session's commits via a fresh PR per the standing rule.
+- **Corrected stale STATE.md monorepo section** (still claimed PR #2 open).
+- Next action unchanged: owner-only deploy (Render Blueprint + Vercel import + Paystack live-E2E).
